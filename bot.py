@@ -29,52 +29,27 @@ def keep_alive():
   t.start()
 
 
-# منوی شروع و دکمه‌های شیشه‌ای انتخاب حجم کانفیگ
+# منوی شروع و دکمه‌ی حجم دلخواه
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
   markup = InlineKeyboardMarkup()
-  markup.row_width = 2
   markup.add(
-      InlineKeyboardButton('10 گیگابایت (1 ماهه)', callback_data='vol_10'),
-      InlineKeyboardButton('20 گیگابایت (1 ماهه)', callback_data='vol_20'),
       InlineKeyboardButton(
-          'حجم دلخواه (10 تا 500 گیگ)', callback_data='vol_custom'
-      ),
-      InlineKeyboardButton('حجم نامحدود', callback_data='vol_unlimited'),
+          '🎯 انتخاب حجم دلخواه (10 تا 500 گیگ)', callback_data='vol_custom'
+      )
   )
   bot.send_message(
       message.chat.id,
-      'سلام! به فروشگاه وی‌پی‌ان خوش آمدید. \nلطفاً حجم کانفیگ مورد نظر خود را'
-      ' انتخاب کنید:',
+      'سلام! به فروشگاه وی‌پی‌ان خوش آمدید.\nبرای خرید کانفیگ، لطفاً روی دکمه‌ی'
+      ' زیر کلیک کنید:',
       reply_markup=markup,
   )
 
 
-# مدیریت کلیک روی دکمه‌های شیشه‌ای
+# مدیریت کلیک روی دکمه‌ی شیشه‌ای
 @bot.callback_query_handler(func=lambda call: True)
 def callback_query(call):
-  if call.data == 'vol_10':
-    bot.answer_callback_query(call.id)
-    bot.send_message(
-        call.message.chat.id,
-        'شما حجم **10 گیگابایت** را انتخاب کردید.\nبرای نهایی شدن خرید، لطفاً'
-        ' وجه را پرداخت کرده و رسید آن را ارسال کنید.',
-    )
-  elif call.data == 'vol_20':
-    bot.answer_callback_query(call.id)
-    bot.send_message(
-        call.message.chat.id,
-        'شما حجم **20 گیگابایت** را انتخاب کردید.\nبرای نهایی شدن خرید، لطفاً'
-        ' وجه را پرداخت کرده و رسید آن را ارسال کنید.',
-    )
-  elif call.data == 'vol_unlimited':
-    bot.answer_callback_query(call.id)
-    bot.send_message(
-        call.message.chat.id,
-        'شما حجم **نامحدود** را انتخاب کردید.\nبرای نهایی شدن خرید، لطفاً وجه'
-        ' را پرداخت کرده و رسید آن را ارسال کنید.',
-    )
-  elif call.data == 'vol_custom':
+  if call.data == 'vol_custom':
     bot.answer_callback_query(call.id)
     user_states[call.message.chat.id] = 'waiting_for_custom_volume'
     bot.send_message(
@@ -97,25 +72,8 @@ def get_custom_volume(message):
       user_states[message.chat.id] = None
       bot.send_message(
           message.chat.id,
-          f'شما حجم **{custom_vol} گیگابایت** را به صورت دلخواه انتخاب'
-          ' کردید.\nبرای نهایی شدن خرید، لطفاً وجه را پرداخت کرده و رسید آن را'
-          ' ارسال کنید.',
-      )
-    else:
-      bot.send_message(
-          message.chat.id,
-          '❌ حجم وارد شده باید عددی بین **10** تا **500** باشد. لطفاً دوباره'
-          ' عدد معتبری ارسال کنید:',
-      )
-  except ValueError:
-    bot.send_message(
-        message.chat.id,
-        '❌ لطفاً فقط یک **عدد صحیح** (مثلاً 50) بین 10 تا 500 ارسال کنید:',
-    )
-
-
-if __name__ == '__main__':
-  keep_alive()
-  print('Bot is polling...')
-  bot.infinity_polling()
-  
+          f'شما حجم **{custom_vol} گیگابایت** را انتخاب کردید.\n\n'
+          '💳 **اطلاعات پرداخت:**\n'
+          'شماره کارت: `5859831128954681`\n'
+          'به نام
+      
