@@ -7,7 +7,7 @@ import telebot
 TOKEN = "9239059091:AAGcs7xr3ygvyBqHWQz1RNthA50acyG3zhA"
 bot = telebot.TeleBot(TOKEN)
 
-# سرور وب برای پاسخ به پورت رندر و جلوگیری از ارور
+# سرور وب کوچک برای پاسخ به رندر و جلوگیری از ارور
 app = Flask('')
 
 
@@ -28,9 +28,7 @@ def keep_alive():
 
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-  bot.reply_to(
-      message, "سلام! فروشگاه وی‌پی‌ان با موفقیت آنلاین شد و آماده کاره."
-  )
+  bot.reply_to(message, "سلام! فروشگاه وی‌پی‌ان با موفقیت آنلاین شد.")
 
 
 if __name__ == '__main__':
