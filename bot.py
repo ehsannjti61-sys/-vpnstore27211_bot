@@ -8,13 +8,13 @@ TOKEN = "9239059091:AAGcs7xr3ygvyBqHWQz1RNthA50acyG3zhA"
 bot = telebot.TeleBot(TOKEN)
 
 # ---------------------------------------------------------
-# تنظیمات ادمین، کانال عضویت اجباری و کانفیگ دستی:
+# تنظیمات ادمین و کانال عضویت اجباری:
 ADMIN_ID = 7855258378
 CHANNEL_USERNAME = "@hfjrbdjd"  # کانال عضویت اجباری
-MY_CUSTOM_CONFIG = "vless://your-real-config-uuid-here@your-server-ip:443?encryption=none&security=tls&type=ws&path=%2F#VPN-Store"
 # ---------------------------------------------------------
 
 user_states = {}
+admin_states = {}  # برای مدیریت وضعیت ادمین (انتظار برای ارسال کانفیگ دستی)
 
 # سرور وب برای پاسخ به رندر و روشن نگه داشتن ربات
 app = Flask('')
@@ -51,8 +51,8 @@ def check_membership(user_id):
 def send_welcome(message):
   user_id = message.from_user.id
 
-  # بررسی عضویت اجباری
-  if not check_membership(user_id):
+  # بررسی عضویت اجباری برای کاربران (ادمین مستثنی است یا او هم چک می‌شود)
+  if user_id != ADMIN_ID and not check_membership(user_id):
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton(
@@ -73,7 +73,6 @@ def send_welcome(message):
     )
     return
 
-  # اگر عضو بود، منوی اصلی خرید
   show_main_menu(message.chat.id)
 
 
@@ -101,7 +100,6 @@ def show_main_menu(chat_id):
 def callback_query(call):
   user_id = call.from_user.id
 
-  # بررسی دکمه عضو شدم
   if call.data == 'check_join':
     if check_membership(user_id):
       bot.answer_callback_query(call.id, 'عضویت شما تایید شد! 🎉')
@@ -116,8 +114,7 @@ def callback_query(call):
       )
     return
 
-  # بررسی عضویت برای سایر دکمه‌ها
-  if not check_membership(user_id):
+  if user_id != ADMIN_ID and not check_membership(user_id):
     bot.answer_callback_query(
         call.id, 'ابتدا باید در کانال عضو شوید!', show_alert=True
     )
@@ -132,25 +129,22 @@ def callback_query(call):
         ' در پیام بعدی ارسال کنید:',
     )
 
-  # تایید رسید توسط ادمین
+  # وقتی ادمین روی «تایید و ارسال کانفیگ» می‌زند
   elif call.data.startswith('admin_approve_'):
     target_user_id = int(call.data.split('_')[2])
-    bot.answer_callback_query(call.id, 'رسید تایید شد و کانفیگ ارسال گردید.')
+    bot.answer_callback_query(call.id)
+
+    # ثبت اینکه ادمین باید کانفیگ این کاربر را به صورت دستی بفرستد
+    admin_states[ADMIN_ID] = {
+        'waiting_for_config': True,
+        'target_user_id': target_user_id,
+        'admin_msg_id': call.message.message_id,
+    }
+
     bot.send_message(
-        target_user_id,
-        '✅ پرداخت شما توسط مدیریت تأیید شد!\n\n🔑 **کانفیگ اختصاصی شما:**\n`'
-        + MY_CUSTOM_CONFIG
-        + '`',
-        parse_mode='Markdown',
-    )
-    bot.edit_message_caption(
-        chat_id=call.message.chat.id,
-        message_id=call.message.message_id,
-        caption=(
-            call.message.caption or ''
-        )
-        + '\n\n🟢 **وضعیت: تایید شده و کانفیگ ارسال شد.**',
-        reply_markup=None,
+        ADMIN_ID,
+        '✍️ لطفاً **لینک کانفیگ دستی** را برای این کاربر ارسال کنید (متن یا'
+        ' لینک کانفیگ را همینجا بفرستید):',
     )
 
   # رد رسید توسط ادمین
@@ -173,19 +167,12 @@ def callback_query(call):
     )
 
 
-# دریافت و بررسی حجم دلخواه ارسالی از طرف کاربر
+# دریافت حجم دلخواه از کاربر
 @bot.message_handler(
     func=lambda message: user_states.get(message.chat.id, {}).get('step')
     == 'waiting_for_custom_volume'
 )
 def get_custom_volume(message):
-  if not check_membership(message.from_user.id):
-    bot.send_message(
-        message.chat.id,
-        f'❌ ابتدا باید در کانال {CHANNEL_USERNAME} عضو شوید.',
-    )
-    return
-
   try:
     custom_vol = int(message.text)
     if 10 <= custom_vol <= 500:
@@ -216,16 +203,13 @@ def get_custom_volume(message):
     )
 
 
-# دریافت رسید پرداخت (عکس یا سند) از طرف کاربر و ارسال برای ادمین
+# دریافت رسید پرداخت و ارسال برای ادمین
 @bot.message_handler(
     content_types=['photo', 'document'],
     func=lambda message: user_states.get(message.chat.id, {}).get('step')
     == 'waiting_for_receipt',
 )
 def get_receipt(message):
-  if not check_membership(message.from_user.id):
-    return
-
   user_data = user_states.get(message.chat.id, {})
   volume = user_data.get('volume', 10)
   user_states[message.chat.id] = None
@@ -236,7 +220,6 @@ def get_receipt(message):
       ' ارسال می‌گردد.',
   )
 
-  # ساخت دکمه‌های تایید و رد برای ادمین
   markup = InlineKeyboardMarkup()
   markup.row_width = 2
   markup.add(
@@ -272,6 +255,35 @@ def get_receipt(message):
         reply_markup=markup,
         parse_mode='Markdown',
     )
+
+
+# دریافت متن کانفیگ دستی از طرف ادمین و ارسال آن به کاربر مربوطه
+@bot.message_handler(
+    func=lambda message: message.chat.id == ADMIN_ID
+    and admin_states.get(ADMIN_ID, {}).get('waiting_for_config')
+)
+def send_manual_config_to_user(message):
+  state = admin_states[ADMIN_ID]
+  target_user_id = state['target_user_id']
+  admin_msg_id = state['admin_msg_id']
+
+  config_text = message.text
+
+  # پاک کردن وضعیت ادمین
+  admin_states[ADMIN_ID] = {}
+
+  # ارسال کانفیگ به کاربر
+  bot.send_message(
+      target_user_id,
+      '✅ پرداخت شما توسط مدیریت تأیید شد!\n\n🔑 **کانفیگ اختصاصی شما:**\n`'
+      + config_text
+      + '`',
+      parse_mode='Markdown',
+  )
+
+  bot.send_message(
+      ADMIN_ID, '✅ کانفیگ با موفقیت به کاربر ارسال شد و پرونده بسته شد.'
+  )
 
 
 if __name__ == '__main__':
