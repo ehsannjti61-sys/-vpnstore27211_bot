@@ -8,8 +8,9 @@ TOKEN = "9239059091:AAGcs7xr3ygvyBqHWQz1RNthA50acyG3zhA"
 bot = telebot.TeleBot(TOKEN)
 
 # ---------------------------------------------------------
-# تنظیمات ادمین و کانفیگ دستی شما:
-ADMIN_ID = 123456789  # <--- اینجا ایدی عددی تلگرام خودت رو بذار
+# تنظیمات ادمین، کانال عضویت اجباری و کانفیگ دستی:
+ADMIN_ID = 7855258378
+CHANNEL_USERNAME = "@hfjrbdjd"  # کانال عضویت اجباری
 MY_CUSTOM_CONFIG = "vless://your-real-config-uuid-here@your-server-ip:443?encryption=none&security=tls&type=ws&path=%2F#VPN-Store"
 # ---------------------------------------------------------
 
@@ -34,9 +35,49 @@ def keep_alive():
   t.start()
 
 
-# منوی شروع و دکمه‌ی حجم دلخواه
+# تابع بررسی عضویت کاربر در کانال
+def check_membership(user_id):
+  try:
+    member = bot.get_chat_member(CHANNEL_USERNAME, user_id)
+    if member.status in ['member', 'administrator', 'creator']:
+      return True
+  except Exception as e:
+    print(f"Error checking membership: {e}")
+  return False
+
+
+# منوی شروع و بررسی عضویت اجباری
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
+  user_id = message.from_user.id
+
+  # بررسی عضویت اجباری
+  if not check_membership(user_id):
+    markup = InlineKeyboardMarkup()
+    markup.add(
+        InlineKeyboardButton(
+            '🔗 عضویت در کانال', url=f'https://t.me/hfjrbdjd'
+        )
+    )
+    markup.add(
+        InlineKeyboardButton(
+            '✅ عضو شدم، بررسی مجدد', callback_data='check_join'
+        )
+    )
+    bot.send_message(
+        message.chat.id,
+        '❌ برای استفاده از ربات و خرید کانفیگ، ابتدا باید در کانال ما عضو'
+        f' شوید:\n{CHANNEL_USERNAME}\n\nپس از عضویت، روی دکمه‌ی «عضو شدم» کلیک'
+        ' کنید.',
+        reply_markup=markup,
+    )
+    return
+
+  # اگر عضو بود، منوی اصلی خرید
+  show_main_menu(message.chat.id)
+
+
+def show_main_menu(chat_id):
   markup = InlineKeyboardMarkup()
   markup.add(
       InlineKeyboardButton(
@@ -44,19 +85,44 @@ def send_welcome(message):
       )
   )
   bot.send_message(
-      message.chat.id,
+      chat_id,
       'سلام! به فروشگاه وی‌پی‌ان خوش آمدید.\nبرای خرید کانفیگ، لطفاً روی دکمه‌ی'
       ' زیر کلیک کنید:',
       reply_markup=markup,
   )
 
 
-# مدیریت کلیک روی دکمه‌ی شیشه‌ای
+# مدیریت کلیک روی دکمه‌های شیشه‌ای
 @bot.callback_query_handler(
     func=lambda call: call.data.startswith('vol_')
     or call.data.startswith('admin_')
+    or call.data == 'check_join'
 )
 def callback_query(call):
+  user_id = call.from_user.id
+
+  # بررسی دکمه عضو شدم
+  if call.data == 'check_join':
+    if check_membership(user_id):
+      bot.answer_callback_query(call.id, 'عضویت شما تایید شد! 🎉')
+      try:
+        bot.delete_message(call.message.chat.id, call.message.message_id)
+      except:
+        pass
+      show_main_menu(call.message.chat.id)
+    else:
+      bot.answer_callback_query(
+          call.id, 'شما هنوز در کانال عضو نشده‌اید!', show_alert=True
+      )
+    return
+
+  # بررسی عضویت برای سایر دکمه‌ها
+  if not check_membership(user_id):
+    bot.answer_callback_query(
+        call.id, 'ابتدا باید در کانال عضو شوید!', show_alert=True
+    )
+    return
+
   if call.data == 'vol_custom':
     bot.answer_callback_query(call.id)
     user_states[call.message.chat.id] = {'step': 'waiting_for_custom_volume'}
@@ -68,11 +134,10 @@ def callback_query(call):
 
   # تایید رسید توسط ادمین
   elif call.data.startswith('admin_approve_'):
-    user_id = int(call.data.split('_')[2])
+    target_user_id = int(call.data.split('_')[2])
     bot.answer_callback_query(call.id, 'رسید تایید شد و کانفیگ ارسال گردید.')
-    # ارسال کانفیگ به کاربر
     bot.send_message(
-        user_id,
+        target_user_id,
         '✅ پرداخت شما توسط مدیریت تأیید شد!\n\n🔑 **کانفیگ اختصاصی شما:**\n`'
         + MY_CUSTOM_CONFIG
         + '`',
@@ -90,11 +155,10 @@ def callback_query(call):
 
   # رد رسید توسط ادمین
   elif call.data.startswith('admin_reject_'):
-    user_id = int(call.data.split('_')[2])
+    target_user_id = int(call.data.split('_')[2])
     bot.answer_callback_query(call.id, 'رسید رد شد.')
-    # اطلاع به کاربر
     bot.send_message(
-        user_id,
+        target_user_id,
         '❌ رسید پرداخت شما توسط مدیریت رد شد یا نامعتبر بود. لطفاً دوباره'
         ' بررسی کنید یا با پشتیبانی در ارتباط باشید.',
     )
@@ -115,6 +179,13 @@ def callback_query(call):
     == 'waiting_for_custom_volume'
 )
 def get_custom_volume(message):
+  if not check_membership(message.from_user.id):
+    bot.send_message(
+        message.chat.id,
+        f'❌ ابتدا باید در کانال {CHANNEL_USERNAME} عضو شوید.',
+    )
+    return
+
   try:
     custom_vol = int(message.text)
     if 10 <= custom_vol <= 500:
@@ -145,13 +216,16 @@ def get_custom_volume(message):
     )
 
 
-# دریافت رسید پرداخت (عکس) از طرف کاربر و ارسال برای ادمین
+# دریافت رسید پرداخت (عکس یا سند) از طرف کاربر و ارسال برای ادمین
 @bot.message_handler(
     content_types=['photo', 'document'],
     func=lambda message: user_states.get(message.chat.id, {}).get('step')
     == 'waiting_for_receipt',
 )
 def get_receipt(message):
+  if not check_membership(message.from_user.id):
+    return
+
   user_data = user_states.get(message.chat.id, {})
   volume = user_data.get('volume', 10)
   user_states[message.chat.id] = None
@@ -166,14 +240,17 @@ def get_receipt(message):
   markup = InlineKeyboardMarkup()
   markup.row_width = 2
   markup.add(
-      InlineKeyboardButton('✅ تایید و ارسال کانفیگ', callback_data=f'admin_approve_{message.chat.id}'),
+      InlineKeyboardButton(
+          '✅ تایید و ارسال کانفیگ',
+          callback_data=f'admin_approve_{message.chat.id}',
+      ),
       InlineKeyboardButton('❌ رد رسید', callback_data=f'admin_reject_{message.chat.id}'),
   )
 
-  # ارسال رسید به ادمین همراه با مشخصات کاربر
   caption_text = (
       f'📥 **رسید جدید دریافت شد!**\n\n'
-      f'👤 کاربر: @{message.from_user.username or "ندارد"} (ID: `{message.chat.id}`)\n'
+      f'👤 کاربر: @{message.from_user.username or "ندارد"} (ID:'
+      f' `{message.chat.id}`)\n'
       f'📦 حجم درخواستی: **{volume} گیگابایت**'
   )
 
