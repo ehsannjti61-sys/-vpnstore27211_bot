@@ -14,7 +14,7 @@ CHANNEL_USERNAME = "@hfjrbdjd"  # کانال عضویت اجباری
 # ---------------------------------------------------------
 
 user_states = {}
-admin_states = {}  # برای مدیریت وضعیت ادمین (انتظار برای ارسال کانفیگ دستی)
+admin_states = {}  # برای مدیریت وضعیت ادمین
 
 # سرور وب برای پاسخ به رندر و روشن نگه داشتن ربات
 app = Flask('')
@@ -51,7 +51,6 @@ def check_membership(user_id):
 def send_welcome(message):
   user_id = message.from_user.id
 
-  # بررسی عضویت اجباری برای کاربران (ادمین مستثنی است یا او هم چک می‌شود)
   if user_id != ADMIN_ID and not check_membership(user_id):
     markup = InlineKeyboardMarkup()
     markup.add(
@@ -134,17 +133,15 @@ def callback_query(call):
     target_user_id = int(call.data.split('_')[2])
     bot.answer_callback_query(call.id)
 
-    # ثبت اینکه ادمین باید کانفیگ این کاربر را به صورت دستی بفرستد
+    # ثبت وضعیت برای ادمین
     admin_states[ADMIN_ID] = {
         'waiting_for_config': True,
         'target_user_id': target_user_id,
-        'admin_msg_id': call.message.message_id,
     }
 
     bot.send_message(
         ADMIN_ID,
-        '✍️ لطفاً **لینک کانفیگ دستی** را برای این کاربر ارسال کنید (متن یا'
-        ' لینک کانفیگ را همینجا بفرستید):',
+        '✍️ لطفاً **لینک کانفیگ** (یا متن کانفیگ) را برای این کاربر ارسال کنید:'
     )
 
   # رد رسید توسط ادمین
@@ -257,7 +254,7 @@ def get_receipt(message):
     )
 
 
-# دریافت متن کانفیگ دستی از طرف ادمین و ارسال آن به کاربر مربوطه
+# دریافت لینک کانفیگ دستی از طرف ادمین (این بخش دقیقاً اصلاح شده تا سریع عمل کند)
 @bot.message_handler(
     func=lambda message: message.chat.id == ADMIN_ID
     and admin_states.get(ADMIN_ID, {}).get('waiting_for_config')
@@ -265,25 +262,27 @@ def get_receipt(message):
 def send_manual_config_to_user(message):
   state = admin_states[ADMIN_ID]
   target_user_id = state['target_user_id']
-  admin_msg_id = state['admin_msg_id']
-
   config_text = message.text
 
-  # پاک کردن وضعیت ادمین
+  # پاک کردن وضعیت ادمین تا برای سفارش‌های بعدی آماده باشد
   admin_states[ADMIN_ID] = {}
 
   # ارسال کانفیگ به کاربر
-  bot.send_message(
-      target_user_id,
-      '✅ پرداخت شما توسط مدیریت تأیید شد!\n\n🔑 **کانفیگ اختصاصی شما:**\n`'
-      + config_text
-      + '`',
-      parse_mode='Markdown',
-  )
-
-  bot.send_message(
-      ADMIN_ID, '✅ کانفیگ با موفقیت به کاربر ارسال شد و پرونده بسته شد.'
-  )
+  try:
+    bot.send_message(
+        target_user_id,
+        '✅ پرداخت شما توسط مدیریت تأیید شد!\n\n🔑 **کانفیگ اختصاصی شما:**\n`'
+        + config_text
+        + '`',
+        parse_mode='Markdown',
+    )
+    bot.send_message(
+        ADMIN_ID, '✅ کانفیگ با موفقیت به کاربر ارسال شد!'
+    )
+  except Exception as e:
+    bot.send_message(
+        ADMIN_ID, f'❌ خطا در ارسال کانفیگ به کاربر: {e}'
+    )
 
 
 if __name__ == '__main__':
