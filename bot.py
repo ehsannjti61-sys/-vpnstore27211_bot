@@ -7,7 +7,12 @@ from telebot.types import InlineKeyboardButton, InlineKeyboardMarkup
 TOKEN = "9239059091:AAGcs7xr3ygvyBqHWQz1RNthA50acyG3zhA"
 bot = telebot.TeleBot(TOKEN)
 
-# دیکشنری برای نگهداری وضعیت و حجم انتخابی کاربران
+# ---------------------------------------------------------
+# تنظیمات ادمین و کانفیگ دستی شما:
+ADMIN_ID = 123456789  # <--- اینجا ایدی عددی تلگرام خودت رو بذار
+MY_CUSTOM_CONFIG = "vless://your-real-config-uuid-here@your-server-ip:443?encryption=none&security=tls&type=ws&path=%2F#VPN-Store"
+# ---------------------------------------------------------
+
 user_states = {}
 
 # سرور وب برای پاسخ به رندر و روشن نگه داشتن ربات
@@ -47,7 +52,10 @@ def send_welcome(message):
 
 
 # مدیریت کلیک روی دکمه‌ی شیشه‌ای
-@bot.callback_query_handler(func=lambda call: True)
+@bot.callback_query_handler(
+    func=lambda call: call.data.startswith('vol_')
+    or call.data.startswith('admin_')
+)
 def callback_query(call):
   if call.data == 'vol_custom':
     bot.answer_callback_query(call.id)
@@ -58,8 +66,50 @@ def callback_query(call):
         ' در پیام بعدی ارسال کنید:',
     )
 
+  # تایید رسید توسط ادمین
+  elif call.data.startswith('admin_approve_'):
+    user_id = int(call.data.split('_')[2])
+    bot.answer_callback_query(call.id, 'رسید تایید شد و کانفیگ ارسال گردید.')
+    # ارسال کانفیگ به کاربر
+    bot.send_message(
+        user_id,
+        '✅ پرداخت شما توسط مدیریت تأیید شد!\n\n🔑 **کانفیگ اختصاصی شما:**\n`'
+        + MY_CUSTOM_CONFIG
+        + '`',
+        parse_mode='Markdown',
+    )
+    bot.edit_message_caption(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        caption=(
+            call.message.caption or ''
+        )
+        + '\n\n🟢 **وضعیت: تایید شده و کانفیگ ارسال شد.**',
+        reply_markup=None,
+    )
 
-# دریافت و بررسی حجم دلخواه ارسالی از طرف کاربر (بازه ۱۰ تا ۵۰۰ گیگ)
+  # رد رسید توسط ادمین
+  elif call.data.startswith('admin_reject_'):
+    user_id = int(call.data.split('_')[2])
+    bot.answer_callback_query(call.id, 'رسید رد شد.')
+    # اطلاع به کاربر
+    bot.send_message(
+        user_id,
+        '❌ رسید پرداخت شما توسط مدیریت رد شد یا نامعتبر بود. لطفاً دوباره'
+        ' بررسی کنید یا با پشتیبانی در ارتباط باشید.',
+    )
+    bot.edit_message_caption(
+        chat_id=call.message.chat.id,
+        message_id=call.message.message_id,
+        caption=(
+            call.message.caption or ''
+        )
+        + '\n\n🔴 **وضعیت: رد شده.**',
+        reply_markup=None,
+    )
+
+
+# دریافت و بررسی حجم دلخواه ارسالی از طرف کاربر
 @bot.message_handler(
     func=lambda message: user_states.get(message.chat.id, {}).get('step')
     == 'waiting_for_custom_volume'
@@ -68,7 +118,6 @@ def get_custom_volume(message):
   try:
     custom_vol = int(message.text)
     if 10 <= custom_vol <= 500:
-      # ذخیره حجم و تغییر مرحله به انتظار برای ارسال رسید
       user_states[message.chat.id] = {
           'step': 'waiting_for_receipt',
           'volume': custom_vol,
@@ -96,7 +145,7 @@ def get_custom_volume(message):
     )
 
 
-# دریافت رسید پرداخت (عکس یا سند) از طرف کاربر
+# دریافت رسید پرداخت (عکس) از طرف کاربر و ارسال برای ادمین
 @bot.message_handler(
     content_types=['photo', 'document'],
     func=lambda message: user_states.get(message.chat.id, {}).get('step')
@@ -105,22 +154,47 @@ def get_custom_volume(message):
 def get_receipt(message):
   user_data = user_states.get(message.chat.id, {})
   volume = user_data.get('volume', 10)
-
-  # پاک کردن وضعیت کاربر
   user_states[message.chat.id] = None
 
   bot.send_message(
       message.chat.id,
-      '⏳ رسید شما برای مدیریت ارسال شد. به زودی پس از بررسی، کانفیگ برای شما'
+      '⏳ رسید شما برای مدیریت ارسال شد. پس از بررسی و تایید، کانفیگ برای شما'
       ' ارسال می‌گردد.',
   )
 
-  # شبیه‌سازی تایید پرداخت و ارسال خودکار لینک کانفیگ (در نسخه‌های بعدی می‌توانید این را به پنل 3x-ui وصل کنید)
-  bot.send_message(
-      message.chat.id,
-      '✅ پرداخت شما تأیید شد!\n\n🔑 **کانفیگ اختصاصی شما:**\n`vless://example-config-uuid-here@server-ip:443?encryption=none&security=tls&type=ws&path=%2F#KasraV2ray`',
-      parse_mode='Markdown',
+  # ساخت دکمه‌های تایید و رد برای ادمین
+  markup = InlineKeyboardMarkup()
+  markup.row_width = 2
+  markup.add(
+      InlineKeyboardButton('✅ تایید و ارسال کانفیگ', callback_data=f'admin_approve_{message.chat.id}'),
+      InlineKeyboardButton('❌ رد رسید', callback_data=f'admin_reject_{message.chat.id}'),
   )
+
+  # ارسال رسید به ادمین همراه با مشخصات کاربر
+  caption_text = (
+      f'📥 **رسید جدید دریافت شد!**\n\n'
+      f'👤 کاربر: @{message.from_user.username or "ندارد"} (ID: `{message.chat.id}`)\n'
+      f'📦 حجم درخواستی: **{volume} گیگابایت**'
+  )
+
+  if message.photo:
+    file_id = message.photo[-1].file_id
+    bot.send_photo(
+        ADMIN_ID,
+        file_id,
+        caption=caption_text,
+        reply_markup=markup,
+        parse_mode='Markdown',
+    )
+  elif message.document:
+    file_id = message.document.file_id
+    bot.send_document(
+        ADMIN_ID,
+        file_id,
+        caption=caption_text,
+        reply_markup=markup,
+        parse_mode='Markdown',
+    )
 
 
 if __name__ == '__main__':
