@@ -8,9 +8,10 @@ TOKEN = "9239059091:AAGcs7xr3ygvyBqHWQz1RNthA50acyG3zhA"
 bot = telebot.TeleBot(TOKEN)
 
 # ---------------------------------------------------------
-# تنظیمات ادمین و کانال عضویت اجباری:
+# تنظیمات ادمین، کانال عضویت اجباری و قیمت هر گیگ (تومان):
 ADMIN_ID = 7855258378
 CHANNEL_USERNAME = "@hfjrbdjd"  # کانال عضویت اجباری
+PRICE_PER_GB = 4000  # قیمت هر گیگابایت به تومان
 # ---------------------------------------------------------
 
 user_states = {}
@@ -84,8 +85,8 @@ def show_main_menu(chat_id):
   )
   bot.send_message(
       chat_id,
-      'سلام! به فروشگاه وی‌پی‌ان خوش آمدید.\nبرای خرید کانفیگ، لطفاً روی دکمه‌ی'
-      ' زیر کلیک کنید:',
+      'سلام! به فروشگاه وی‌پی‌ان خوش آمدید.\n(نرخ هر گیگابایت: ۴,۰۰۰'
+      ' تومان)\n\nبرای خرید کانفیگ، لطفاً روی دکمه‌ی زیر کلیک کنید:',
       reply_markup=markup,
   )
 
@@ -133,7 +134,6 @@ def callback_query(call):
     target_user_id = int(call.data.split('_')[2])
     bot.answer_callback_query(call.id)
 
-    # ثبت وضعیت برای ادمین
     admin_states[ADMIN_ID] = {
         'waiting_for_config': True,
         'target_user_id': target_user_id,
@@ -164,7 +164,7 @@ def callback_query(call):
     )
 
 
-# دریافت حجم دلخواه از کاربر
+# دریافت حجم دلخواه از کاربر و محاسبه قیمت
 @bot.message_handler(
     func=lambda message: user_states.get(message.chat.id, {}).get('step')
     == 'waiting_for_custom_volume'
@@ -173,13 +173,18 @@ def get_custom_volume(message):
   try:
     custom_vol = int(message.text)
     if 10 <= custom_vol <= 500:
+      total_price = custom_vol * PRICE_PER_GB
+      formatted_price = f'{total_price:,}'  # جدا کردن سه رقم سه رقم اعداد
+
       user_states[message.chat.id] = {
           'step': 'waiting_for_receipt',
           'volume': custom_vol,
+          'price': total_price,
       }
       bot.send_message(
           message.chat.id,
-          f'شما حجم **{custom_vol} گیگابایت** را انتخاب کردید.\n\n'
+          f'شما حجم **{custom_vol} گیگابایت** را انتخاب کردید.\n'
+          f'💵 مبلغ قابل پرداخت: **{formatted_price} تومان**\n\n'
           '💳 **اطلاعات پرداخت:**\n'
           'شماره کارت: `5859831128954681`\n'
           'به نام: **کسرا زارعی**\n\n'
@@ -200,7 +205,7 @@ def get_custom_volume(message):
     )
 
 
-# دریافت رسید پرداخت و ارسال برای ادمین
+# دریافت رسید پرداخت و ارسال برای ادمین همراه با مبلغ محاسبه شده
 @bot.message_handler(
     content_types=['photo', 'document'],
     func=lambda message: user_states.get(message.chat.id, {}).get('step')
@@ -209,6 +214,8 @@ def get_custom_volume(message):
 def get_receipt(message):
   user_data = user_states.get(message.chat.id, {})
   volume = user_data.get('volume', 10)
+  price = user_data.get('price', volume * PRICE_PER_GB)
+  formatted_price = f'{price:,}'
   user_states[message.chat.id] = None
 
   bot.send_message(
@@ -231,7 +238,8 @@ def get_receipt(message):
       f'📥 **رسید جدید دریافت شد!**\n\n'
       f'👤 کاربر: @{message.from_user.username or "ندارد"} (ID:'
       f' `{message.chat.id}`)\n'
-      f'📦 حجم درخواستی: **{volume} گیگابایت**'
+      f'📦 حجم درخواستی: **{volume} گیگابایت**\n'
+      f'💰 مبلغ فاکتور: **{formatted_price} تومان**'
   )
 
   if message.photo:
@@ -254,7 +262,7 @@ def get_receipt(message):
     )
 
 
-# دریافت لینک کانفیگ دستی از طرف ادمین (این بخش دقیقاً اصلاح شده تا سریع عمل کند)
+# دریافت لینک کانفیگ دستی از طرف ادمین و ارسال آن به کاربر
 @bot.message_handler(
     func=lambda message: message.chat.id == ADMIN_ID
     and admin_states.get(ADMIN_ID, {}).get('waiting_for_config')
@@ -264,10 +272,8 @@ def send_manual_config_to_user(message):
   target_user_id = state['target_user_id']
   config_text = message.text
 
-  # پاک کردن وضعیت ادمین تا برای سفارش‌های بعدی آماده باشد
   admin_states[ADMIN_ID] = {}
 
-  # ارسال کانفیگ به کاربر
   try:
     bot.send_message(
         target_user_id,
